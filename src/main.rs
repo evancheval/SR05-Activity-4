@@ -1,6 +1,6 @@
 use colored_text::Colorize;
 use std::env;
-use std::io::{self, stderr, Read, Write};
+use std::io::{self, stderr, BufRead, BufReader, Write};
 use std::thread;
 use std::time::Duration;
 
@@ -55,9 +55,17 @@ fn run(args: Args) -> io::Result<()> {
 }
 
 fn receive_input(program_number: u64) -> io::Result<String> {
-    let mut input = String::new();
-    io::stdin().read_to_string(&mut input)?;
-    if input.is_empty() {
+    let stdin = io::stdin();
+    let reader = BufReader::new(stdin.lock());
+    let mut lines = Vec::new();
+
+    write_to_stderr(format!("[{}] Waiting for input\n", program_number).as_str())?;
+
+    for line in reader.lines() {
+        lines.push(line?);
+    }
+
+    if lines.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::UnexpectedEof,
             format!(
@@ -66,6 +74,8 @@ fn receive_input(program_number: u64) -> io::Result<String> {
             ),
         ));
     }
+
+    let input = lines.join("\n");
 
     write_to_stderr(format!("[{}] Réception du message: {}\n", program_number, input).as_str())?;
 
