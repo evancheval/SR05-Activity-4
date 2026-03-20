@@ -1,6 +1,7 @@
 use colored_text::Colorize;
 use std::env;
 use std::io::{self, stderr, BufRead, BufReader, Write};
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
@@ -44,12 +45,30 @@ fn write_to_stderr(message: &str) -> io::Result<()> {
 fn run(args: Args) -> io::Result<()> {
     let interval = Duration::from_secs(1);
 
+    let (tx, rx) = mpsc::channel::<String>();
+
+    let args_clone = Args {
+        program_number: args.program_number,
+    };
     thread::spawn(move || loop {
-        receive_input(args.program_number).unwrap_or_default();
+        if let Ok(msg) = receive_input(args_clone.program_number) {
+            let _ = tx.send(msg);
+        }
     });
 
+    let mut current_message = ORIGINAL_MESSAGE.to_string();
+
     loop {
-        emit_output(ORIGINAL_MESSAGE, args.program_number)?;
+        // Vérifier s'il y a un nouveau message depuis stdin
+        if let Ok(new_msg) = rx.try_recv() {
+            current_message = new_msg;
+            write_to_stderr(&format!(
+                "[{}] Message mis à jour: {}\n",
+                args.program_number, current_message
+            ))?;
+        }
+
+        emit_output(&current_message, args.program_number)?;
         thread::sleep(interval);
     }
 }
@@ -57,29 +76,23 @@ fn run(args: Args) -> io::Result<()> {
 fn receive_input(program_number: u64) -> io::Result<String> {
     let stdin = io::stdin();
     let reader = BufReader::new(stdin.lock());
-    let mut lines = Vec::new();
+    write_to_stderr(&format!("[{}] Waiting for input\n", program_number))?;
 
-    write_to_stderr(format!("[{}] Waiting for input\n", program_number).as_str())?;
-
-    for line in reader.lines() {
-        lines.push(line?);
-    }
-
-    if lines.is_empty() {
-        return Err(io::Error::new(
+    // Lire UNE SEULE ligne, pas boucler jusqu'à EOF
+    let mut lines = reader.lines();
+    if let Some(line_result) = lines.next() {
+        let line = line_result?;
+        write_to_stderr(&format!("[{}] Réception du message: {}\n", program_number, line))?;
+        Ok(line.trim().to_string())
+    } else {
+        Err(io::Error::new(
             io::ErrorKind::UnexpectedEof,
             format!(
                 "[{}] Aucune donnée reçue sur l'entrée standard (stdin).",
                 program_number
             ),
-        ));
+        ))
     }
-
-    let input = lines.join("\n");
-
-    write_to_stderr(format!("[{}] Réception du message: {}\n", program_number, input).as_str())?;
-
-    Ok(input.trim().to_string())
 }
 
 fn emit_output(message: &str, program_number: u64) -> io::Result<()> {
@@ -89,7 +102,7 @@ fn emit_output(message: &str, program_number: u64) -> io::Result<()> {
             .hex("00d5ff")
             .as_bytes(),
     )?;
-    stdout.write_all(b"\n")?;
+    stdout.write_all(b"\r\n")?;
     stdout.flush()?;
     Ok(())
 }
