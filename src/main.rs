@@ -38,6 +38,7 @@ impl Args {
                     ))
                     })?;
                     args.program_number = n;
+                    i += 1;
                 }
                 "--test-atomicity" => {
                     // Option de test pour simuler une vérification d'atomicité (ex: en vérifiant que les logs d'émission et de réception ne se mélangent pas)
@@ -137,8 +138,9 @@ fn check_atomicity_for(fun: &str, program_number: u64) -> io::Result<()> {
 }
 
 // Fonction pour afficher une légende des couleurs utilisées dans les logs
-fn write_legend() -> io::Result<()> {
-    write_to_stderr("Color legend : \n")?;
+fn write_legend(program_number: u64) -> io::Result<()> {
+    write_to_stderr("\n-------------------\n")?;
+    write_to_stderr(format!("[{}] Color legend : \n", program_number).as_str())?;
     write_to_stderr("Checking\n".green().as_str())?;
     write_to_stderr("Log d'émission/de réception\n".red().as_str())?;
     write_to_stderr(
@@ -146,13 +148,13 @@ fn write_legend() -> io::Result<()> {
             .hex("00d5ff")
             .as_str(),
     )?;
-    write_to_stderr("-------------------")?;
+    write_to_stderr("-------------------\n\n")?;
     Ok(())
 }
 
 fn main() -> io::Result<()> {
     let args = Args::parse()?;
-    write_legend()?;
+    write_legend(args.program_number)?;
 
     run(args)
 }
