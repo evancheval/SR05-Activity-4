@@ -1,37 +1,59 @@
 # SR05-Activity-4
-Travail de programmation demandé dans l'activité 4 de l'Unité de Valeur SR05 (Algorithmes et Systèmes répartis) à l'Université de Technologie de Compiègne
 
-## Programme Rust: echo stdin -> stdout
+Travail de programmation demandé dans l'activité 4 de l'Unité de Valeur SR05 (Algorithmes et Systèmes répartis) à l'Université de Technologie de Compiègne.
 
-Ce projet contient un binaire Rust qui lit tout ce qui arrive sur l'entrée standard (`stdin`) puis réécrit exactement ce contenu de manière périodique sur la sortie standard (`stdout`).
+## Description
 
-Si une erreur se produit (par exemple aucune donnée reçue sur `stdin`), le message d'erreur est écrit sur la sortie d'erreur (`stderr`) et le programme quitte avec un code non nul.
+Ce programme Rust respecte les consignes de l'activité (hors interface graphique) :
 
-Par défaut, le message est réécrit toutes les secondes jusqu'à l'arrêt du programme (`Ctrl+C`).
+- **Émission périodique** : le programme écrit un message toutes les secondes sur `stdout`. Le message est une chaîne de caractères fixée au lancement (`original message`).
+- **Sortie standard exclusive** : aucun autre affichage n'est fait sur `stdout`. Tous les logs (réception, émission, atomicité) sont écrits sur `stderr`.
+- **Réception asynchrone** : un thread dédié bloque sur la lecture de `stdin` et ne s'éveille que lorsqu'une ligne est disponible. Le programme ne sonde pas périodiquement son entrée.
+- **Séquentiel et atomique** : émission et réception partagent le verrou de `stdout`. Une action en cours ne peut pas être interrompue par l'autre.
 
-## Exécution sur PowerShell (Windows)
+## Arguments obligatoire
 
-### 1) Compiler et lancer avec une entrée `stdin` (PowerShell)
+### Identifiant du programme
 
-```powershell
-"Bonjour SR05" | cargo run --quiet
+```
+-p <entier>
+--program-number <entier>
 ```
 
-Le texte `Bonjour SR05` sera alors réécrit en boucle toutes les secondes.
+Identifiant entier du programme, utilisé pour préfixer les logs sur `stderr` afin de distinguer les processus dans un pipeline.
 
-### 2) Avec un fichier comme `stdin`
+## Commandes de test
 
-```powershell
-Get-Content .\input.txt | cargo run --quiet
+> Attention : les commandes ci-dessous sont à exécuter dans un terminal compatible Unix (Linux, macOS).
+
+### 1. Site unique — réception d'un message depuis le shell
+
+```bash
+echo "Bonjour SR05" | cargo run -q -- -p 1
 ```
 
-### 3) Cas d'erreur (pas d'entrée)
+Le programme reçoit `Bonjour SR05`, le logue sur `stderr` sous la forme `[1] Réception du message: ...`, puis continue d'émettre `[1] original message` toutes les secondes sur `stdout`.
 
-```powershell
-cargo run --quiet
+### 2. Lien entre deux sites
+
+```bash
+cargo run -q -- -p 1 | cargo run -q -- -p 2
 ```
 
-Le programme affichera alors une erreur sur `stderr`.
+Le programme 1 émet périodiquement sur `stdout`. Le programme 2 reçoit chaque ligne sur `stdin` et la logue sur `stderr`.
 
-## Exécution sur Terminal (Linux/Mac)
-TODO
+### 3. Anneau (ring) avec FIFO
+
+```bash
+mkfifo /tmp/f ; cargo run -q -- -p 1 < /tmp/f | cargo run -q -- -p 2 | cargo run -q -- -p 3 > /tmp/f
+```
+
+Pour injecter un message dans l'anneau depuis un autre terminal :
+
+```bash
+echo "hello ring" > /tmp/f
+```
+
+## Vérification de l'atomicité
+
+La fonction `check_atomicity_for` (désactivée par défaut) peut être activée dans `emit_output` et `receive_input` pour allonger artificiellement la durée de chaque action et vérifier visuellement que les logs sur `stderr` ne s'entrelacent pas.
