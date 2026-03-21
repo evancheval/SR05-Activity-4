@@ -45,7 +45,9 @@ fn run(args: Args) -> io::Result<()> {
     let interval = Duration::from_secs(1);
 
     thread::spawn(move || loop {
-        receive_input(args.program_number).unwrap_or_default();
+        // Cette instruction attendra qu'il y ait quelque chose sur stdin avant de continuer
+        if let Some(line_result) = BufReader::new(io::stdin().lock()).lines().next() {
+        receive_input(args.program_number, line_result).unwrap_or_default();}
     });
 
     loop {
@@ -54,54 +56,43 @@ fn run(args: Args) -> io::Result<()> {
     }
 }
 
-fn receive_input(program_number: u64) -> io::Result<String> {
-    let stdin = io::stdin();
-    let reader = BufReader::new(stdin.lock());
-    // write_to_stderr(&format!("[{}] Waiting for input\n", program_number))?; 
+fn receive_input(program_number: u64, line_result: io::Result<String>) -> io::Result<String> {
+        // Pour simuler l'atomicité (empêcher l'émission de s'éxécuter en même temps)
+        let _stdout = io::stdout().lock();
 
-    // Lire UNE SEULE ligne, pas boucler jusqu'à EOF
-    let mut lines = reader.lines();
-
-    // Pour simuler l'atomicité (empêcher l'émission de s'éxécuter en même temps)
-    let _stdout = io::stdout().lock();
-
-    if let Some(line_result) = lines.next() {
-        let line = line_result?;
+        let message = line_result?;
         write_to_stderr(&format!(
             "[{}] Réception du message: {}\n",
-            program_number, line
+            program_number, message
         ))?;
-        Ok(line.trim().to_string())
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::UnexpectedEof,
-            format!(
-                "[{}] Aucune donnée reçue sur l'entrée standard (stdin).",
-                program_number
-            ),
-        ))
-    }
+        // check_atomicity_for("receive input", program_number)?;
+        Ok(message.trim().to_string())
 }
 
 fn emit_output(message: &str, program_number: u64) -> io::Result<()> {
     // Pour simuler l'atomicité (empêcher la réception de s'éxécuter en même temps)
-    let _stdin = io::stdin().lock();
+    // let _stdin = io::stdin().lock();
     let mut stdout = io::stdout().lock();
+    let message = format!("[{}] {}", program_number, message);
+    write_to_stderr(&format!(
+            "[{}] Emission du message: {}\n",
+            program_number, message
+        ))?;
     stdout.write_all(
-        format!("[{}] {}", program_number, message)
+        message
             .hex("00d5ff")
             .as_bytes(),
     )?;
     stdout.write_all(b"\n")?;
     stdout.flush()?;
-    check_atomicity_for("emit output", program_number)?;
+    // check_atomicity_for("emit output", program_number)?;
     Ok(())
 }
 
 fn check_atomicity_for(fun: &str, program_number: u64) -> io::Result<()> {
-    write_to_stderr(format!("...[{}] checking atomicity for {} ...\n", program_number, fun).green().as_str())?;
+    write_to_stderr(format!("[{}] checking atomicity for {} ...\n", program_number, fun).green().as_str())?;
     thread::sleep(Duration::from_secs(5));
-    write_to_stderr(format!("...[{}] finished checking atomicity for {}...\n", program_number, fun).green().as_str())?;
+    write_to_stderr(format!("[{}] finished checking atomicity for {}.\n", program_number, fun).green().as_str())?;
     Ok(())
 }
 
