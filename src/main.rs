@@ -9,31 +9,50 @@ static ORIGINAL_MESSAGE: &str = "original message";
 
 struct Args {
     program_number: u64,
+    test_atomicity: bool,
 }
 
 // Parse les arguments de la ligne de commande pour extraire le numéro du programme
 // pour un affichage plus clair dans les logs. Ex: cargo run -- --program-number 1
 impl Args {
+    fn new() -> Self {
+        Args {
+            program_number: 0,
+            test_atomicity: false,
+        }
+    }
+
     fn parse() -> io::Result<Self> {
-        let args: Vec<String> = env::args().collect();
+        let args_iter: Vec<String> = env::args().collect();
+        let mut args = Args::new();
         let mut i = 1;
-        while i < args.len() {
-            if args[i] == "--program-number" || args[i] == "-p" {
-                let val = args.get(i + 1).ok_or_else(|| {
-                    io::Error::other("--program-number/-p requiert une valeur entière.")
-                })?;
-                let n: u64 = val.parse().map_err(|_| {
-                    io::Error::other(format!(
+        while i < args_iter.len() {
+            match args_iter[i].as_str() {
+                "--program-number" | "-p" => {
+                    let val = args_iter.get(i + 1).ok_or_else(|| {
+                        io::Error::other("--program-number/-p requiert une valeur entière.")
+                    })?;
+                    let n: u64 = val.parse().map_err(|_| {
+                        io::Error::other(format!(
                         "Valeur invalide pour --program-number/-p: '{val}'. Entier positif attendu."
                     ))
-                })?;
-                return Ok(Self { program_number: n });
+                    })?;
+                    args.program_number = n;
+                }
+                "--test-atomicity" => {
+                    // Option de test pour simuler une vérification d'atomicité (ex: en vérifiant que les logs d'émission et de réception ne se mélangent pas)
+                    args.test_atomicity = true;
+                }
+                _ => {
+                    return Err(io::Error::other(format!(
+                        "Argument inconnu: '{}'. Usage: cargo run -- --program-number/-p <entier>",
+                        args_iter[i]
+                    )))
+                }
             }
             i += 1;
         }
-        Err(io::Error::other(
-            "Argument manquant. Usage: cargo run -- --program-number/-p <entier>",
-        ))
+        Ok(args)
     }
 }
 
@@ -54,29 +73,36 @@ fn run(args: Args) -> io::Result<()> {
         // Cette instruction attendra qu'il y ait quelque chose sur stdin avant de continuer
         // (donc réception asynchrone car ne vérifie pas en permanence, mais attend passivement)
         if let Some(line_result) = BufReader::new(io::stdin().lock()).lines().next() {
-            receive_input(args.program_number, line_result).unwrap_or_default();
+            receive_input(line_result, args.program_number, args.test_atomicity)
+                .unwrap_or_default();
         }
     });
 
     // Boucle principale d'émission périodique du message original
     loop {
-        emit_output(ORIGINAL_MESSAGE, args.program_number)?;
+        emit_output(ORIGINAL_MESSAGE, args.program_number, args.test_atomicity)?;
         thread::sleep(interval);
     }
 }
 
 // Fonction pour gérer la réception d'input, atomique
-fn receive_input(program_number: u64, line_result: io::Result<String>) -> io::Result<String> {
+fn receive_input(
+    line_result: io::Result<String>,
+    program_number: u64,
+    test_atomicity: bool,
+) -> io::Result<String> {
     // Pour forcer l'atomicité (empêcher l'émission de s'éxécuter en même temps)
     let _stdout = io::stdout().lock();
 
     let message = line_result?;
     write_to_stderr(&format!("[{}] Réception du message: {}\n", program_number, message).red())?;
-    // check_atomicity_for("receive input", program_number)?;
+    if test_atomicity {
+        check_atomicity_for("receive input", program_number)?;
+    }
     Ok(message.trim().to_string())
 }
 
-fn emit_output(message: &str, program_number: u64) -> io::Result<()> {
+fn emit_output(message: &str, program_number: u64, test_atomicity: bool) -> io::Result<()> {
     // Vérouiller au début du programme permet l'atomicté entre l'émission et la réception,
     // car la réception attendra que le verrou soit libéré avant de pouvoir s'exécuter, et vice versa.
     let mut stdout = io::stdout().lock();
@@ -85,7 +111,9 @@ fn emit_output(message: &str, program_number: u64) -> io::Result<()> {
     stdout.write_all(message.hex("00d5ff").as_bytes())?;
     stdout.write_all(b"\n")?;
     stdout.flush()?;
-    // check_atomicity_for("emit output", program_number)?;
+    if test_atomicity {
+        check_atomicity_for("emit output", program_number)?;
+    }
     Ok(())
 }
 

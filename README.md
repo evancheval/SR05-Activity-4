@@ -11,7 +11,7 @@ Ce programme Rust respecte les consignes de l'activité (hors interface graphiqu
 - **Réception asynchrone** : un thread dédié bloque sur la lecture de `stdin` et ne s'éveille que lorsqu'une ligne est disponible. Le programme ne sonde pas périodiquement son entrée.
 - **Séquentiel et atomique** : émission et réception partagent le verrou de `stdout`. Une action en cours ne peut pas être interrompue par l'autre.
 
-## Arguments obligatoire
+## Arguments obligatoires
 
 ### Identifiant du programme
 
@@ -21,6 +21,16 @@ Ce programme Rust respecte les consignes de l'activité (hors interface graphiqu
 ```
 
 Identifiant entier du programme, utilisé pour préfixer les logs sur `stderr` afin de distinguer les processus dans un pipeline.
+
+## Arguments optionnels
+
+### Test d'atomicité
+
+```
+--test-atomicity
+```
+
+Ce flag active des logs supplémentaires sur `stderr` pour vérifier que les émissions et réceptions ne se chevauchent pas. Lorsqu'une action commence, un message "Début de l'action" est logué, et à la fin "Fin de l'action". En cas de chevauchement, les messages s'entremêleront, indiquant une violation de l'atomicité.
 
 ## Commandes de test
 
@@ -53,7 +63,3 @@ Pour injecter un message dans l'anneau depuis un autre terminal :
 ```bash
 echo "hello ring" > /tmp/f
 ```
-
-## Vérification de l'atomicité
-
-La fonction `check_atomicity_for` (désactivée par défaut) peut être activée dans `emit_output` et `receive_input` pour allonger artificiellement la durée de chaque action et vérifier visuellement que les logs sur `stderr` ne s'entrelacent pas.
