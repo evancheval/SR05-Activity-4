@@ -62,6 +62,9 @@ fn receive_input(program_number: u64) -> io::Result<String> {
     // Lire UNE SEULE ligne, pas boucler jusqu'à EOF
     let mut lines = reader.lines();
 
+    // Pour simuler l'atomicité (empêcher l'émission de s'éxécuter en même temps)
+    let _stdout = io::stdout().lock();
+
     if let Some(line_result) = lines.next() {
         let line = line_result?;
         write_to_stderr(&format!(
@@ -81,6 +84,8 @@ fn receive_input(program_number: u64) -> io::Result<String> {
 }
 
 fn emit_output(message: &str, program_number: u64) -> io::Result<()> {
+    // Pour simuler l'atomicité (empêcher la réception de s'éxécuter en même temps)
+    let _stdin = io::stdin().lock();
     let mut stdout = io::stdout().lock();
     stdout.write_all(
         format!("[{}] {}", program_number, message)
@@ -89,6 +94,14 @@ fn emit_output(message: &str, program_number: u64) -> io::Result<()> {
     )?;
     stdout.write_all(b"\n")?;
     stdout.flush()?;
+    check_atomicity_for("emit output", program_number)?;
+    Ok(())
+}
+
+fn check_atomicity_for(fun: &str, program_number: u64) -> io::Result<()> {
+    write_to_stderr(format!("...[{}] checking atomicity for {} ...\n", program_number, fun).green().as_str())?;
+    thread::sleep(Duration::from_secs(5));
+    write_to_stderr(format!("...[{}] finished checking atomicity for {}...\n", program_number, fun).green().as_str())?;
     Ok(())
 }
 
