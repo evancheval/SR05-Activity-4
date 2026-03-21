@@ -4,12 +4,15 @@ use std::io::{self, stderr, BufRead, BufReader, Write};
 use std::thread;
 use std::time::Duration;
 
+// Message fixé au départ
 static ORIGINAL_MESSAGE: &str = "original message";
 
 struct Args {
     program_number: u64,
 }
 
+// Parse les arguments de la ligne de commande pour extraire le numéro du programme
+// pour un affichage plus clair dans les logs. Ex: cargo run -- --program-number 1
 impl Args {
     fn parse() -> io::Result<Self> {
         let args: Vec<String> = env::args().collect();
@@ -34,70 +37,94 @@ impl Args {
     }
 }
 
+// Fonction utilitaire pour écrire dans stderr de manière plus concise
 fn write_to_stderr(message: &str) -> io::Result<()> {
     let mut stderr = stderr();
-    stderr.write_all(message.red().as_bytes())?;
+    stderr.write_all(message.as_bytes())?;
     stderr.flush()?;
     Ok(())
 }
 
+// Fonction principale qui gère l'émission périodique et la réception d'input
 fn run(args: Args) -> io::Result<()> {
     let interval = Duration::from_secs(1);
 
+    // Thread dédié à la réception d'input sur stdin
     thread::spawn(move || loop {
         // Cette instruction attendra qu'il y ait quelque chose sur stdin avant de continuer
+        // (donc réception asynchrone car ne vérifie pas en permanence, mais attend passivement)
         if let Some(line_result) = BufReader::new(io::stdin().lock()).lines().next() {
-        receive_input(args.program_number, line_result).unwrap_or_default();}
+            receive_input(args.program_number, line_result).unwrap_or_default();
+        }
     });
 
+    // Boucle principale d'émission périodique du message original
     loop {
         emit_output(ORIGINAL_MESSAGE, args.program_number)?;
         thread::sleep(interval);
     }
 }
 
+// Fonction pour gérer la réception d'input, atomique
 fn receive_input(program_number: u64, line_result: io::Result<String>) -> io::Result<String> {
-        // Pour simuler l'atomicité (empêcher l'émission de s'éxécuter en même temps)
-        let _stdout = io::stdout().lock();
+    // Pour forcer l'atomicité (empêcher l'émission de s'éxécuter en même temps)
+    let _stdout = io::stdout().lock();
 
-        let message = line_result?;
-        write_to_stderr(&format!(
-            "[{}] Réception du message: {}\n",
-            program_number, message
-        ))?;
-        // check_atomicity_for("receive input", program_number)?;
-        Ok(message.trim().to_string())
+    let message = line_result?;
+    write_to_stderr(&format!("[{}] Réception du message: {}\n", program_number, message).red())?;
+    // check_atomicity_for("receive input", program_number)?;
+    Ok(message.trim().to_string())
 }
 
 fn emit_output(message: &str, program_number: u64) -> io::Result<()> {
-    // Pour simuler l'atomicité (empêcher la réception de s'éxécuter en même temps)
-    // let _stdin = io::stdin().lock();
+    // Vérouiller au début du programme permet l'atomicté entre l'émission et la réception,
+    // car la réception attendra que le verrou soit libéré avant de pouvoir s'exécuter, et vice versa.
     let mut stdout = io::stdout().lock();
     let message = format!("[{}] {}", program_number, message);
-    write_to_stderr(&format!(
-            "[{}] Emission du message: {}\n",
-            program_number, message
-        ))?;
-    stdout.write_all(
-        message
-            .hex("00d5ff")
-            .as_bytes(),
-    )?;
+    write_to_stderr(&format!("[{}] Emission du message: {}\n", program_number, message).red())?;
+    stdout.write_all(message.hex("00d5ff").as_bytes())?;
     stdout.write_all(b"\n")?;
     stdout.flush()?;
     // check_atomicity_for("emit output", program_number)?;
     Ok(())
 }
 
+// Fonction pour simuler une vérification d'atomicité (ex: en vérifiant que les logs d'émission et de réception ne se mélangent pas)
 fn check_atomicity_for(fun: &str, program_number: u64) -> io::Result<()> {
-    write_to_stderr(format!("[{}] checking atomicity for {} ...\n", program_number, fun).green().as_str())?;
+    write_to_stderr(
+        format!("[{}] checking atomicity for {} ...\n", program_number, fun)
+            .green()
+            .as_str(),
+    )?;
     thread::sleep(Duration::from_secs(5));
-    write_to_stderr(format!("[{}] finished checking atomicity for {}.\n", program_number, fun).green().as_str())?;
+    write_to_stderr(
+        format!(
+            "[{}] finished checking atomicity for {}.\n",
+            program_number, fun
+        )
+        .green()
+        .as_str(),
+    )?;
+    Ok(())
+}
+
+// Fonction pour afficher une légende des couleurs utilisées dans les logs
+fn write_legend() -> io::Result<()> {
+    write_to_stderr("Color legend : \n")?;
+    write_to_stderr("Checking\n".green().as_str())?;
+    write_to_stderr("Log d'émission/de réception\n".red().as_str())?;
+    write_to_stderr(
+        "Message sur la sortie standard (sdout)\n"
+            .hex("00d5ff")
+            .as_str(),
+    )?;
+    write_to_stderr("-------------------")?;
     Ok(())
 }
 
 fn main() -> io::Result<()> {
     let args = Args::parse()?;
+    write_legend()?;
 
     run(args)
 }
