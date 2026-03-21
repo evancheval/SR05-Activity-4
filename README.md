@@ -36,6 +36,8 @@ Ce flag active des logs supplémentaires sur `stderr` pour vérifier que les ém
 
 > Attention : les commandes ci-dessous sont à exécuter dans un terminal compatible Unix (Linux, macOS).
 
+Les commandes ci-dessous doivent être exécutées à la racine du projet, là où se trouve le fichier `Cargo.toml`.
+
 ### 1. Site unique — réception d'un message depuis le shell
 
 ```bash
