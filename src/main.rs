@@ -1,7 +1,6 @@
 use colored_text::Colorize;
 use std::env;
 use std::io::{self, stderr, BufRead, BufReader, Write};
-use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
@@ -45,29 +44,11 @@ fn write_to_stderr(message: &str) -> io::Result<()> {
 fn run(args: Args) -> io::Result<()> {
     let interval = Duration::from_secs(1);
 
-    let (sender, _receiver) = mpsc::channel::<String>();
-
-    let args_clone = Args {
-        program_number: args.program_number,
-    };
     thread::spawn(move || loop {
-        if let Ok(msg) = receive_input(args_clone.program_number) {
-            let _ = sender.send(msg);
-        }
+        receive_input(args.program_number).unwrap_or_default();
     });
 
-    // let mut current_message = ORIGINAL_MESSAGE.to_string();
-
     loop {
-        // Vérifier s'il y a un nouveau message depuis stdin
-        // if let Ok(new_msg) = receiver.try_recv() {
-        //     current_message = new_msg;
-        //     write_to_stderr(&format!(
-        //         "[{}] Message mis à jour: {}\n",
-        //         args.program_number, current_message
-        //     ))?;
-        // }
-
         emit_output(ORIGINAL_MESSAGE, args.program_number)?;
         thread::sleep(interval);
     }
@@ -76,10 +57,11 @@ fn run(args: Args) -> io::Result<()> {
 fn receive_input(program_number: u64) -> io::Result<String> {
     let stdin = io::stdin();
     let reader = BufReader::new(stdin.lock());
-    // write_to_stderr(&format!("[{}] Waiting for input\n", program_number))?;
+    // write_to_stderr(&format!("[{}] Waiting for input\n", program_number))?; 
 
     // Lire UNE SEULE ligne, pas boucler jusqu'à EOF
     let mut lines = reader.lines();
+
     if let Some(line_result) = lines.next() {
         let line = line_result?;
         write_to_stderr(&format!(
@@ -105,7 +87,7 @@ fn emit_output(message: &str, program_number: u64) -> io::Result<()> {
             .hex("00d5ff")
             .as_bytes(),
     )?;
-    stdout.write_all(b"\r\n")?;
+    stdout.write_all(b"\n")?;
     stdout.flush()?;
     Ok(())
 }
