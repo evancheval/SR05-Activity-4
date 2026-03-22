@@ -33,15 +33,6 @@ Identifiant entier du programme, utilisé pour préfixer les logs sur `stderr` a
 
 Ce flag active des logs supplémentaires sur `stderr` pour vérifier que les émissions et réceptions ne se chevauchent pas. Lorsqu'une action commence, un message "Début de l'action" est logué, et à la fin "Fin de l'action". En cas de chevauchement, les messages s'entremêleront, indiquant une violation de l'atomicité.
 
-### Fenêtres individuelles
-
-```
--w
---individual-windows
-```
-
-Ce flag permet d'ouvrir une fenêtre de terminal dédiée pour chaque instance du programme, facilitant la visualisation des logs séparément.
-
 ### Transmission des messages reçus
 
 ```

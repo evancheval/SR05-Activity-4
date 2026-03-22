@@ -4,8 +4,6 @@ use std::io::{self, stderr, BufRead, BufReader, Write};
 use std::thread;
 use std::time::Duration;
 
-mod log_window;
-
 // Message fixé au départ
 static ORIGINAL_MESSAGE: &str = "msg";
 static LOG_COLOR: &str = "ff007f";
@@ -16,7 +14,6 @@ static mut CURRENT_MESSAGE: Option<String> = None;
 struct Args {
     program_number: u64,
     test_atomicity: bool,
-    individual_windows: bool,
     forward_received: bool,
 }
 
@@ -27,7 +24,6 @@ impl Args {
         Args {
             program_number: 0,
             test_atomicity: false,
-            individual_windows: false,
             forward_received: false,
         }
     }
@@ -54,10 +50,6 @@ impl Args {
                     // Option de test pour simuler une vérification d'atomicité (ex: en vérifiant que les logs d'émission et de réception ne se mélangent pas)
                     args.test_atomicity = true;
                 }
-                "--individual-windows" | "-w" => {
-                    // Option pour ouvrir une fenêtre de terminal dédiée pour chaque instance du programme, facilitant la visualisation des logs séparément.
-                    args.individual_windows = true;
-                }
                 "--forward-received" | "-f" => {
                     // Option pour transmettre les messages reçus au lieu du message fixe.
                     args.forward_received = true;
@@ -80,8 +72,6 @@ fn write_to_stderr(message: &str) -> io::Result<()> {
     let mut stderr = stderr();
     stderr.write_all(message.as_bytes())?;
     stderr.flush()?;
-
-    log_window::append_log_message(message)?;
 
     Ok(())
 }
@@ -176,8 +166,8 @@ fn check_atomicity_for(fun: &str, program_number: u64) -> io::Result<()> {
             .as_str(),
     )?;
     for _ in 0..5 {
-        write_to_stderr(".")?;
-        // thread::sleep(Duration::from_secs(1));
+        // write_to_stderr(".")?;
+        thread::sleep(Duration::from_secs(1));
     }
     write_to_stderr(
         format!(
@@ -207,11 +197,6 @@ fn write_legend(program_number: u64) -> io::Result<()> {
 
 fn main() -> io::Result<()> {
     let args = Args::parse()?;
-
-    if args.individual_windows {
-        log_window::init_external_log_window(args.program_number)?;
-        log_window::install_shutdown_handler()?;
-    }
 
     write_legend(args.program_number)?;
 

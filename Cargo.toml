@@ -5,4 +5,3 @@ edition = "2021"
 
 [dependencies]
 colored_text = "0.3"
-ctrlc = "3.4"
