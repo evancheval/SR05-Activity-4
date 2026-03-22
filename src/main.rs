@@ -6,6 +6,9 @@ use std::time::Duration;
 
 // Message fixé au départ
 static ORIGINAL_MESSAGE: &str = "original message";
+static LOG_COLOR: &str = "ff007f";
+static STDOUT_OUTPUT: &str = "00d5ff";
+static CHECKING_COLOR: &str = "08ff00";
 
 struct Args {
     program_number: u64,
@@ -96,7 +99,7 @@ fn receive_input(
     let _stdout = io::stdout().lock();
 
     let message = line_result?;
-    write_to_stderr(&format!("[{}] Réception du message: {}\n", program_number, message).red())?;
+    write_to_stderr(&format!("[{}] Réception du message: {}\n", program_number, message).hex(LOG_COLOR))?;
     if test_atomicity {
         check_atomicity_for("receive input", program_number)?;
     }
@@ -108,8 +111,8 @@ fn emit_output(message: &str, program_number: u64, test_atomicity: bool) -> io::
     // car la réception attendra que le verrou soit libéré avant de pouvoir s'exécuter, et vice versa.
     let mut stdout = io::stdout().lock();
     let message = format!("[{}] {}", program_number, message);
-    write_to_stderr(&format!("[{}] Emission du message: {}\n", program_number, message).red())?;
-    stdout.write_all(message.hex("00d5ff").as_bytes())?;
+    write_to_stderr(&format!("[{}] Emission du message: {}\n", program_number, message).hex(LOG_COLOR))?;
+    stdout.write_all(message.hex(STDOUT_OUTPUT).as_bytes())?;
     stdout.write_all(b"\n")?;
     stdout.flush()?;
     if test_atomicity {
@@ -122,7 +125,7 @@ fn emit_output(message: &str, program_number: u64, test_atomicity: bool) -> io::
 fn check_atomicity_for(fun: &str, program_number: u64) -> io::Result<()> {
     write_to_stderr(
         format!("[{}] checking atomicity for {} ...\n", program_number, fun)
-            .green()
+            .hex(CHECKING_COLOR)
             .as_str(),
     )?;
     thread::sleep(Duration::from_secs(5));
@@ -131,7 +134,7 @@ fn check_atomicity_for(fun: &str, program_number: u64) -> io::Result<()> {
             "[{}] finished checking atomicity for {}.\n",
             program_number, fun
         )
-        .green()
+        .hex(CHECKING_COLOR)
         .as_str(),
     )?;
     Ok(())
@@ -141,11 +144,11 @@ fn check_atomicity_for(fun: &str, program_number: u64) -> io::Result<()> {
 fn write_legend(program_number: u64) -> io::Result<()> {
     write_to_stderr("\n-------------------\n")?;
     write_to_stderr(format!("[{}] Color legend : \n", program_number).as_str())?;
-    write_to_stderr("Checking\n".green().as_str())?;
-    write_to_stderr("Log d'émission/de réception\n".red().as_str())?;
+    write_to_stderr("Checking\n".hex(CHECKING_COLOR).as_str())?;
+    write_to_stderr("Log d'émission/de réception\n".hex(LOG_COLOR).as_str())?;
     write_to_stderr(
         "Message sur la sortie standard (sdout)\n"
-            .hex("00d5ff")
+            .hex(STDOUT_OUTPUT)
             .as_str(),
     )?;
     write_to_stderr("-------------------\n\n")?;
