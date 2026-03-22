@@ -4,6 +4,8 @@ use std::io::{self, stderr, BufRead, BufReader, Write};
 use std::thread;
 use std::time::Duration;
 
+mod log_window;
+
 // Message fixé au départ
 static ORIGINAL_MESSAGE: &str = "msg";
 static LOG_COLOR: &str = "ff007f";
@@ -78,6 +80,9 @@ fn write_to_stderr(message: &str) -> io::Result<()> {
     let mut stderr = stderr();
     stderr.write_all(message.as_bytes())?;
     stderr.flush()?;
+
+    log_window::append_log_message(message)?;
+
     Ok(())
 }
 
@@ -162,14 +167,18 @@ fn emit_output(message: &str, program_number: u64, test_atomicity: bool) -> io::
     Ok(())
 }
 
-// Fonction pour simuler une vérification d'atomicité (ex: en vérifiant que les logs d'émission et de réception ne se mélangent pas)
+// Fonction pour effectuer une vérification d'atomicité
+// (ex: en vérifiant que les logs d'émission et de réception ne se mélangent pas)
 fn check_atomicity_for(fun: &str, program_number: u64) -> io::Result<()> {
     write_to_stderr(
         format!("[{}] checking atomicity for {} ...\n", program_number, fun)
             .hex(CHECKING_COLOR)
             .as_str(),
     )?;
-    thread::sleep(Duration::from_secs(5));
+    for _ in 0..5 {
+        write_to_stderr(".")?;
+        // thread::sleep(Duration::from_secs(1));
+    }
     write_to_stderr(
         format!(
             "[{}] finished checking atomicity for {}.\n",
@@ -198,6 +207,12 @@ fn write_legend(program_number: u64) -> io::Result<()> {
 
 fn main() -> io::Result<()> {
     let args = Args::parse()?;
+
+    if args.individual_windows {
+        log_window::init_external_log_window(args.program_number)?;
+        log_window::install_shutdown_handler()?;
+    }
+
     write_legend(args.program_number)?;
 
     run(args)
