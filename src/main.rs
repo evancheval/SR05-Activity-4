@@ -5,14 +5,17 @@ use std::thread;
 use std::time::Duration;
 
 // Message fixé au départ
-static ORIGINAL_MESSAGE: &str = "original message";
+static ORIGINAL_MESSAGE: &str = "msg";
 static LOG_COLOR: &str = "ff007f";
 static STDOUT_OUTPUT: &str = "00d5ff";
 static CHECKING_COLOR: &str = "08ff00";
+static mut CURRENT_MESSAGE: Option<String> = None;
 
 struct Args {
     program_number: u64,
     test_atomicity: bool,
+    individual_windows: bool,
+    forward_received: bool,
 }
 
 // Parse les arguments de la ligne de commande pour extraire le numéro du programme
@@ -22,6 +25,8 @@ impl Args {
         Args {
             program_number: 0,
             test_atomicity: false,
+            individual_windows: false,
+            forward_received: false,
         }
     }
 
@@ -43,9 +48,17 @@ impl Args {
                     args.program_number = n;
                     i += 1;
                 }
-                "--test-atomicity" => {
+                "--test-atomicity" | "-a" => {
                     // Option de test pour simuler une vérification d'atomicité (ex: en vérifiant que les logs d'émission et de réception ne se mélangent pas)
                     args.test_atomicity = true;
+                }
+                "--individual-windows" | "-w" => {
+                    // Option pour ouvrir une fenêtre de terminal dédiée pour chaque instance du programme, facilitant la visualisation des logs séparément.
+                    args.individual_windows = true;
+                }
+                "--forward-received" | "-f" => {
+                    // Option pour transmettre les messages reçus au lieu du message fixe.
+                    args.forward_received = true;
                 }
                 _ => {
                     return Err(io::Error::other(format!(
@@ -77,14 +90,32 @@ fn run(args: Args) -> io::Result<()> {
         // Cette instruction attendra qu'il y ait quelque chose sur stdin avant de continuer
         // (donc réception asynchrone car ne vérifie pas en permanence, mais attend passivement)
         if let Some(line_result) = BufReader::new(io::stdin().lock()).lines().next() {
-            receive_input(line_result, args.program_number, args.test_atomicity)
-                .unwrap_or_default();
+            receive_input(
+                line_result,
+                args.program_number,
+                args.test_atomicity,
+                args.forward_received,
+            )
+            .unwrap_or_default();
         }
     });
 
     // Boucle principale d'émission périodique du message original
     loop {
-        emit_output(ORIGINAL_MESSAGE, args.program_number, args.test_atomicity)?;
+        // Si l'option de transmission des messages reçus est activée,
+        // utilise le message reçu le plus récent au lieu du message fixe.
+        let message = if args.forward_received {
+            unsafe {
+                if let Some(ref msg) = CURRENT_MESSAGE {
+                    msg
+                } else {
+                    ORIGINAL_MESSAGE
+                }
+            }
+        } else {
+            ORIGINAL_MESSAGE
+        };
+        emit_output(message, args.program_number, args.test_atomicity)?;
         thread::sleep(interval);
     }
 }
@@ -94,12 +125,20 @@ fn receive_input(
     line_result: io::Result<String>,
     program_number: u64,
     test_atomicity: bool,
+    forward_received: bool,
 ) -> io::Result<String> {
     // Pour forcer l'atomicité (empêcher l'émission de s'éxécuter en même temps)
     let _stdout = io::stdout().lock();
 
     let message = line_result?;
-    write_to_stderr(&format!("[{}] Réception du message: {}\n", program_number, message).hex(LOG_COLOR))?;
+    write_to_stderr(
+        &format!("[{}] Réception du message: {}\n", program_number, message).hex(LOG_COLOR),
+    )?;
+    if forward_received {
+        unsafe {
+            CURRENT_MESSAGE = Some(message.clone());
+        }
+    }
     if test_atomicity {
         check_atomicity_for("receive input", program_number)?;
     }
@@ -111,7 +150,9 @@ fn emit_output(message: &str, program_number: u64, test_atomicity: bool) -> io::
     // car la réception attendra que le verrou soit libéré avant de pouvoir s'exécuter, et vice versa.
     let mut stdout = io::stdout().lock();
     let message = format!("[{}] {}", program_number, message);
-    write_to_stderr(&format!("[{}] Emission du message: {}\n", program_number, message).hex(LOG_COLOR))?;
+    write_to_stderr(
+        &format!("[{}] Emission du message: {}\n", program_number, message).hex(LOG_COLOR),
+    )?;
     stdout.write_all(message.hex(STDOUT_OUTPUT).as_bytes())?;
     stdout.write_all(b"\n")?;
     stdout.flush()?;
