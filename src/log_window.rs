@@ -11,6 +11,10 @@ static LOG_VIEWER_CHILD: OnceLock<Mutex<Option<std::process::Child>>> = OnceLock
 #[cfg(windows)]
 const CREATE_NEW_CONSOLE: u32 = 0x00000010;
 
+// Initialise le fichier de logs et ouvre une fenêtre séparée pour visualiser les logs en temps réel.
+// - Sur Windows : petite fenêtre PowerShell (90x18) avec Get-Content -Wait
+// - Sur Linux : xterm ou gnome-terminal (80x15) avec tail -f
+
 pub fn append_log_message(message: &str) -> io::Result<()> {
     if let Some(log_file) = LOG_FILE.get() {
         if let Ok(mut log_file) = log_file.lock() {
@@ -23,7 +27,6 @@ pub fn append_log_message(message: &str) -> io::Result<()> {
 
 pub fn init_external_log_window(program_number: u64) -> io::Result<()> {
     let log_path = std::env::temp_dir().join(format!("sr05_logs_{}.ansi.log", program_number));
-    let script_path = std::env::temp_dir().join(format!("sr05_logs_{}_viewer.ps1", program_number));
 
     let log_file = OpenOptions::new()
         .create(true)
@@ -32,6 +35,22 @@ pub fn init_external_log_window(program_number: u64) -> io::Result<()> {
         .open(&log_path)?;
 
     let _ = LOG_FILE.set(Mutex::new(BufWriter::new(log_file)));
+
+    #[cfg(windows)]
+    spawn_windows_log_viewer(&log_path, program_number)?;
+
+    #[cfg(target_os = "linux")]
+    spawn_linux_log_viewer(&log_path, program_number)?;
+
+    #[cfg(target_os = "macos")]
+    spawn_macos_log_viewer(&log_path, program_number)?;
+
+    Ok(())
+}
+
+#[cfg(windows)]
+fn spawn_windows_log_viewer(log_path: &std::path::Path, program_number: u64) -> io::Result<()> {
+    let script_path = std::env::temp_dir().join(format!("sr05_logs_{}_viewer.ps1", program_number));
 
     let escaped_log_path = log_path.display().to_string().replace('"', "`\"");
     let ps_script = format!(
@@ -45,19 +64,80 @@ pub fn init_external_log_window(program_number: u64) -> io::Result<()> {
 
     fs::write(&script_path, ps_script)?;
 
-    #[cfg(windows)]
-    {
-        let child = std::process::Command::new("powershell")
-            .args([
-                "-NoExit",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                script_path.to_string_lossy().as_ref(),
-            ])
-            .creation_flags(CREATE_NEW_CONSOLE)
-            .spawn()?;
+    let child = std::process::Command::new("powershell")
+        .args([
+            "-NoExit",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            script_path.to_string_lossy().as_ref(),
+        ])
+        .creation_flags(CREATE_NEW_CONSOLE)
+        .spawn()?;
 
+    let child_slot = LOG_VIEWER_CHILD.get_or_init(|| Mutex::new(None));
+    if let Ok(mut child_slot) = child_slot.lock() {
+        *child_slot = Some(child);
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn spawn_linux_log_viewer(log_path: &std::path::Path, program_number: u64) -> io::Result<()> {
+    let log_path_str = log_path.to_string_lossy().to_string();
+    let title = format!("SR05 Logs [{}]", program_number);
+
+    let child = std::process::Command::new("xterm")
+        .args([
+            "-title",
+            &title,
+            "-geometry",
+            "80x15",
+            "-e",
+            &format!("tail -f '{}' ; read", log_path_str),
+        ])
+        .spawn()
+        .or_else(|_| {
+            std::process::Command::new("gnome-terminal")
+                .args([
+                    "--title",
+                    &title,
+                    "--",
+                    "bash",
+                    "-c",
+                    &format!("tail -f '{}' ; read", log_path_str),
+                ])
+                .spawn()
+        });
+
+    if let Ok(child) = child {
+        let child_slot = LOG_VIEWER_CHILD.get_or_init(|| Mutex::new(None));
+        if let Ok(mut child_slot) = child_slot.lock() {
+            *child_slot = Some(child);
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn spawn_macos_log_viewer(log_path: &std::path::Path, program_number: u64) -> io::Result<()> {
+    let log_path_str = log_path.to_string_lossy().to_string();
+    let applescript = format!(
+        "tell app \"Terminal\"\n\
+         activate\n\
+         do script \"tail -f '{}'; echo Press Ctrl+C to quit\"\n\
+         set title displays to \"SR05 Logs [{}]\"\n\
+         end tell",
+        log_path_str, program_number
+    );
+
+    let child = std::process::Command::new("osascript")
+        .args(["-e", &applescript])
+        .spawn();
+
+    if let Ok(child) = child {
         let child_slot = LOG_VIEWER_CHILD.get_or_init(|| Mutex::new(None));
         if let Ok(mut child_slot) = child_slot.lock() {
             *child_slot = Some(child);
